@@ -16,15 +16,15 @@ public class DemoServer {
             System.out.println("Server başlatıldı. Port " + port + " üzerinde dinleniyor...");
 
             while (true) {
-                Socket clientSocket = serverSocket.accept(); // Yeni bağlantı bekleniyor
-                new Thread(new ClientHandler(clientSocket)).start(); // İstemciye hizmet veren iş parçacığı başlat
+                Socket clientSocket = serverSocket.accept(); // Yeni bağlantı 
+                new Thread(new ClientHandler(clientSocket)).start(); // Kullanıcıya hizmet veren thread
             }
         } catch (IOException e) {
             System.err.println("Port dinlenirken bir hata oluştu: " + e.getMessage());
         }
     }
 
-    // İstemciler için iş parçacığı sınıfı
+    // Her kullanıcı için thread
     private static class ClientHandler implements Runnable {
         private Socket clientSocket;
         private PrintWriter out;
@@ -41,17 +41,17 @@ public class DemoServer {
                 out = new PrintWriter(clientSocket.getOutputStream(), true);
                 in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
 
-                // Oda numarası seçimi
+                // Oda numarası seçim
                 out.println("Bir odaya bağlanmak için oda numarası girin:");
                 roomId = Integer.parseInt(in.readLine());
 
-                // Odaya istemci ekle
+                // Odaya kullanıcı ekle
                 synchronized (rooms) {
                     rooms.putIfAbsent(roomId, new ArrayList<>());
                     rooms.get(roomId).add(this);
                 }
 
-                // Bağlanan istemciye mesaj gönder
+                // Bağlanan kullanıcıya mesaj gönder
                 out.println("Oda " + roomId + " numarasına bağlandınız.");
 
                 // Mesajları okuma ve broadcast
@@ -63,7 +63,7 @@ public class DemoServer {
             } catch (IOException e) {
                 System.err.println("İstemci ile bağlantı hatası: " + e.getMessage());
             } finally {
-                // İstemci bağlantısı kesildiğinde odadan çıkar
+                // Kullanıcının bağlantısı kesildiğinde odadan çıksın
                 leaveRoom();
                 try {
                     clientSocket.close();
@@ -73,18 +73,18 @@ public class DemoServer {
             }
         }
 
-        // Oda içindeki tüm istemcilere mesaj yayınlama (gönderen istemciyi hariç tutuyoruz)
+        // Oda içindeki tüm kullanıcılara mesaj gönderme (gönderen kullanıcı hariç)
         private void broadcastMessage(String message, ClientHandler sender) {
             synchronized (rooms) {
                 for (ClientHandler client : rooms.get(roomId)) {
-                    if (client != sender) { // Gönderen istemciyi hariç tut
+                    if (client != sender) { // Gönderen hariç!!!
                         client.out.println(message);
                     }
                 }
             }
         }
 
-        // İstemci odayı terk eder
+        // Kullanıcı ayrılma durumu
         private void leaveRoom() {
             synchronized (rooms) {
                 rooms.get(roomId).remove(this);
