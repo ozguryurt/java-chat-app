@@ -13,21 +13,21 @@ public class DemoClient2 {
     private static JTextField messageField;
     private static PrintWriter out;
     private static BufferedReader in;
-    private static String lastSentMessage = ""; // En son gönderilen mesajı tutmak için
+    private static String lastSentMessage = ""; // En son gönderilen mesaj
 
     public static void main(String[] args) {
         // Sunucu bağlantı bilgileri
-        String serverAddress = "127.0.0.1"; // localhost
+        String serverAddress = "127.0.0.1"; // localhost ip'si
         int serverPort = 12345;
 
-        // GUI bileşenlerini oluşturma
+        // GUI bileşenlerini
         JFrame frame = new JFrame("Chat Client (Oda 3)");
         chatArea = new JTextArea(20, 50);
         chatArea.setEditable(false);
         messageField = new JTextField(40);
         JButton sendButton = new JButton("Gönder");
 
-        // Mesaj gönderme butonu dinleyicisi
+        // Mesaj gönderme butonu
         sendButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
@@ -60,10 +60,10 @@ public class DemoClient2 {
             out = new PrintWriter(socket.getOutputStream(), true);
             in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
 
-            // Sunucuya oda numarasını (3) gönder
+            // Test amaçlı oda numarası 3 olsun
             out.println("3");
 
-            // Sunucudan gelen mesajları dinleyen iş parçacığı
+            // Sunucudan gelen mesajları dinleyen thread
             Thread readerThread = new Thread(() -> {
                 try {
                     String serverMessage;
@@ -89,7 +89,7 @@ public class DemoClient2 {
         if (!message.trim().isEmpty()) {
             lastSentMessage = message; // Son gönderilen mesajı sakla
             out.println(message);  // Sunucuya mesaj gönder
-            chatArea.append("Sen: " + message + "\n");  // Kendi gönderdiğin mesajı "Sen" olarak göster
+            chatArea.append("Sen: " + message + "\n");  // Kullanıcının kendi gönderdiği mesajı "Sen" olarak göster
             messageField.setText("");  // Mesaj alanını temizle
         }
     }
