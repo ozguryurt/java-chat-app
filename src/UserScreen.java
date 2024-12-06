@@ -1,4 +1,3 @@
-
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ActionEvent;
@@ -23,6 +22,27 @@ public class UserScreen {
         JLabel welcomeLabel = new JLabel("Hoşgeldiniz, " + username + "!", SwingConstants.CENTER);
         welcomeLabel.setFont(new Font("Arial", Font.BOLD, 16));
         frame.add(welcomeLabel, BorderLayout.NORTH);
+
+        // Çıkış yap butonu
+        JButton logoutButton = new JButton("Çıkış Yap");
+        logoutButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                // UserSession nesnesini sıfırla
+                UserSession.getInstance().clearSession();
+
+                // MainScreen ekranını aç
+                SwingUtilities.invokeLater(() -> {
+                    new MainScreen();  // MainScreen'i başlat
+                    frame.dispose();   // UserScreen'i kapat
+                });
+            }
+        });
+
+        // Çıkış butonunu ekle
+        JPanel logoutPanel = new JPanel();
+        logoutPanel.add(logoutButton);
+        frame.add(logoutPanel, BorderLayout.SOUTH);
 
         // Ortada birleşen paneller için ana panel
         JPanel centerPanel = new JPanel(new GridLayout(1, 2, 20, 0));
