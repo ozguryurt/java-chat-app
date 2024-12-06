@@ -23,4 +23,7 @@ invokeLater, GUI işlemlerinin diğer arka plan görevlerinden ayrılmasını sa
 
 Kullanıcının etkileşimlerinden (örneğin tıklamalar, yazmalar) ve programın içindeki GUI işlemlerinden gelen tüm olaylar EventQueue tarafından sıraya alınır.
 EventQueue, sıraya alınmış olayları birer birer işler ve bu olayları Event Dispatch Thread (EDT) üzerinde çalıştırır.
+
+SwingUtilities.invokeLater: Kullanıcı arayüzü işlemlerini EDT'de (ana iş parçacığında) çalıştırır.
+SwingWorker, uzun süren veya arka planda çalıştırılması gereken işlemleri Swing uygulamasının ana iş parçacığını (Event Dispatch Thread - EDT) engellemeden çalıştırmak için kullanılır.
 */
