@@ -8,14 +8,18 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
 
 public class ChatRoomScreen {
 
-    private Socket socket;
-    private PrintWriter out;
-    private JTextArea chatArea;
-    private JFrame frame; // Frame'i bir sınıf değişkeni olarak tanımla
-    private UserSession userData;
+    private Socket socket; // Sunucuya bağlantıyı temsil eder.
+    private PrintWriter out; // Sunucuya mesaj göndermek için kullanılan PrintWriter nesnesi.
+    private JTextArea chatArea; // Kullanıcıların mesajlarını ve diğer bilgileri görüntülediği bir metin alanı.
+    private JFrame frame; // Sohbet odası arayüzünü temsil eden ana pencere.
+    private UserSession userData; // Kullanıcı oturum bilgilerini tutan sınıf.
+    private DefaultListModel<String> participantsListModel; // Katılımcı listesinin modelini tutar (dinamik olarak güncellenebilir)
+    private JList<String> participantsList; // Katılımcıların görüntülendiği JList arayüz şeyi
 
     public ChatRoomScreen() throws SQLException {
         chatArea = new JTextArea();
@@ -35,7 +39,7 @@ public class ChatRoomScreen {
             out.println(UserSession.getInstance().getUsername());
             out.println(UserSession.getInstance().getRoomId());
 
-            // Sunucudan gelen mesajları dinlemek için ayrı bir thread başlat
+            // Sunucudan gelen mesajları dinlemek için ayrı bir thread
             new Thread(() -> {
                 try (BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
                     String line;
@@ -54,8 +58,13 @@ public class ChatRoomScreen {
                                 frame.dispose();  // Mevcut pencereyi kapat
                             }
                             break; // Döngüden çık
+                        } else if (line.startsWith("UPDATE_PARTICIPANTS_LIST ")) {
+                            // Katılımcı listesini güncelle
+                            String[] users = line.substring(25).split(",");
+                            updateParticipantsList(users);
+                        } else {
+                            chatArea.append(line + "\n");
                         }
-                        chatArea.append(line + "\n");
                     }
                 } catch (IOException e) {
                     e.printStackTrace();
@@ -67,17 +76,18 @@ public class ChatRoomScreen {
             e.printStackTrace();
         }
 
-        // Tek bir frame tanımlanmalı
+        // Katılımcı listesi için DefaultListModel kullanılıyor
+        participantsListModel = new DefaultListModel<>(); // Katılımcı listesinin modelini tutar (dinamik olarak güncellenebilir).
+        participantsList = new JList<>(participantsListModel);
         JPanel participantsPanel = new JPanel(new BorderLayout());
         participantsPanel.setBorder(BorderFactory.createTitledBorder("Katılımcılar"));
         JLabel roomInfoLabel = new JLabel("Oda numarası: " + UserSession.getInstance().getRoomId());
         JButton leaveRoomButton = new JButton("Odadan Ayrıl");
-        JList<String> participantsList = new JList<>(new String[]{"ozgur", "bayhan"});
         participantsPanel.add(roomInfoLabel, BorderLayout.NORTH);
         participantsPanel.add(new JScrollPane(participantsList), BorderLayout.CENTER);
         participantsPanel.add(leaveRoomButton, BorderLayout.SOUTH);
 
-        // Eğer kullanıcı oda sahibi ise "Odayı Kapat" butonu ekle
+        // Eğer kullanıcı oda sahibi ise "Odayı Kapat" butonu gözüksün
         if (UserSession.getInstance().getUserId() == getRoomOwnerId(UserSession.getInstance().getRoomId())) {
             // Kullanıcı oda sahibi ise "Odayı Kapat" butonu eklenir
             JButton closeRoomButton = new JButton("Odayı Kapat");
@@ -90,7 +100,6 @@ public class ChatRoomScreen {
                     } catch (IOException ex) {
                         ex.printStackTrace();
                     }
-
                 }
             });
 
@@ -154,5 +163,15 @@ public class ChatRoomScreen {
             }
         }
         return -1; // Oda bulunamazsa -1 döner
+    }
+
+    // Katılımcı listesinde güncelleme yapacak metod
+    private void updateParticipantsList(String[] users) {
+        // Listede bulunan tüm elemanları sil
+        participantsListModel.clear();
+        // Yeni kullanıcıları ekle
+        for (String user : users) {
+            participantsListModel.addElement(user);
+        }
     }
 }
