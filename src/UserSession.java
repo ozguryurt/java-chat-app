@@ -36,4 +36,11 @@ public class UserSession {
     public void setRoomId(int roomId) {
         this.roomId = roomId;
     }
+
+    // User session'ı sıfırlayan metot
+    public void clearSession() {
+        this.username = null;
+        this.userId = 0;
+        this.roomId = 0;
+    }
 }
