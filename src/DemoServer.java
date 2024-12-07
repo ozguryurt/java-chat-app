@@ -1,43 +1,46 @@
-
 import java.io.*;
 import java.net.*;
 import java.sql.*;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.*;
+import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
-/*
-
-synchronized kullanılmışsa: Belirttiğiniz kod bloğu veya metot, otomatik olarak bir kilit mekanizmasına sahip olur.
-
- */
 public class DemoServer {
 
-    // Odaları ve her odadaki kullanıcıları tutan bir Map nesnesi. (kay value ilişkisi, key = oda ID'si, value = ClientHandler listesi)
-    //private static final Map<Integer, List<ClientHandler>> rooms = new HashMap<>();
-    // ConcurrentHashMap kullanılabilir. Bu, eş zamanlı okuma/yazma işlemlerini optimize eder.
+    // // Odaların ve o odadaki istemcilerin listesi
     private static final Map<Integer, List<ClientHandler>> rooms = new ConcurrentHashMap<>();
 
-    // 10 iş parçacığına kadar eşzamanlı işlemleri yöneten bir iş parçacığı havuzu.
-    //private static final ExecutorService threadPool = Executors.newFixedThreadPool(10); // 10 iş parçacığı
-    // Gerektiğinde iş parçacığı sayısını artırır ve kullanılmayanları zamanla serbest bırakır. (newCachedThreadPool)
-    private static final ExecutorService threadPool = Executors.newCachedThreadPool();
+    // Sabit boyutlu iş parçacığı havuzu ve queue yapısı
+    private static final int THREAD_POOL_SIZE = 10;
+    private static final BlockingQueue<Runnable> messageQueue = new LinkedBlockingQueue<>();
+    private static final ExecutorService threadPool = new ThreadPoolExecutor(
+            THREAD_POOL_SIZE,
+            THREAD_POOL_SIZE,
+            0L,
+            TimeUnit.MILLISECONDS,
+            messageQueue
+    );
+    /*
+    Eğer bir kuyruk kullanılmasaydı:
+    İş parçacığı havuzunun boyutu dolduğunda, yeni görevler kabul edilemezdi.
+    Sunucu gelen görevleri doğrudan reddedebilir veya hata fırlatabilirdi.
+    Bu, kullanıcıların mesaj göndermesi sırasında başarısızlığa neden olabilirdi.
+     */
 
-    private static final ReentrantLock roomLock = new ReentrantLock();
+    // Lock yapısı
+    private static final Lock lock = new ReentrantLock();
 
-    // Sunucu başladığında, veritabanında mevcut olan odaların yüklenmesi.
+    // Veri tabanından odaları çek ve rooms değişkenine ekle
     public static void loadRoomsFromDatabase() {
-        String query = "SELECT id FROM rooms"; // Oda ID'lerini çeken sorgu
+        String query = "SELECT id FROM rooms";
         try (Connection connection = DriverManager.getConnection("jdbc:mysql://localhost:3306/chatapp_db", "root", ""); Statement statement = connection.createStatement(); ResultSet resultSet = statement.executeQuery(query)) {
 
             while (resultSet.next()) {
                 int roomId = resultSet.getInt("id");
-                rooms.put(roomId, new ArrayList<>()); // Her oda için boş bir kullanıcı listesi eklenir
+                rooms.put(roomId, new ArrayList<>());
             }
-
-            System.out.println("Oda bilgileri başarıyla yüklendi.");
+            System.out.println("Oda bilgileri yüklendi.");
         } catch (SQLException e) {
             System.err.println("Veritabanından oda bilgileri yüklenirken bir hata oluştu.");
             e.printStackTrace();
@@ -50,12 +53,13 @@ public class DemoServer {
         try (ServerSocket serverSocket = new ServerSocket(port)) {
             System.out.println("Server " + port + " üzerinden başlatıldı.");
 
-            // Odaları yükle
             loadRoomsFromDatabase();
 
             while (true) {
-                Socket clientSocket = serverSocket.accept(); // Yeni bir istemci bağlandığında bir Socket nesnesi döndürür.
-                new Thread(new ClientHandler(clientSocket)).start(); // Her istemci için yeni bir iş parçacığı oluşturulur ve ClientHandler sınıfı çalıştırılır.
+                // Her gelen client için yeni bir socket oluştur
+                Socket clientSocket = serverSocket.accept();
+                // Her gelen client için bir thread oluştur
+                new Thread(new ClientHandler(clientSocket)).start();
             }
         } catch (IOException e) {
             System.err.println("Port dinlenirken bir hata oluştu: " + e.getMessage());
@@ -64,12 +68,12 @@ public class DemoServer {
 
     private static class ClientHandler implements Runnable {
 
-        private final Socket clientSocket; // İstemci ile iletişimi sağlayan soket nesnesi.
-        private PrintWriter out; // İstemciye veri göndermek ve istemciden gelen veriyi okumak için kullanılır.
-        private BufferedReader in; // İstemciye veri göndermek ve istemciden gelen veriyi okumak için kullanılır.
-        private int userId; // İstemciye ait bilgiler.
-        private String username; // İstemciye ait bilgiler.
-        private int roomId; // İstemciye ait bilgiler.
+        private final Socket clientSocket;
+        private PrintWriter out; // giden mesajlar
+        private BufferedReader in; // gelen mesajlar
+        private int userId;
+        private String username;
+        private int roomId;
 
         public ClientHandler(Socket socket) {
             this.clientSocket = socket;
@@ -78,9 +82,9 @@ public class DemoServer {
         @Override
         public void run() {
             try {
-                initializeConnection(); // İstemciden kullanıcı bilgilerini alır.
-                joinRoom(); // Kullanıcıyı belirtilen odaya ekler.
-                handleClientMessages(); // Kullanıcıdan gelen mesajları işler.
+                initializeConnection();
+                joinRoom();
+                handleClientMessages();
             } catch (IOException | SQLException e) {
                 System.err.println("Bağlantı hatası: " + e.getMessage());
             } finally {
@@ -89,38 +93,37 @@ public class DemoServer {
         }
 
         private void initializeConnection() throws IOException {
-            // PrintWriter ve BufferedReader: Soket üzerinden veri gönderme/alma işlemleri.
             out = new PrintWriter(clientSocket.getOutputStream(), true);
             in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
 
-            // Socket sunucusuna bağlanan kullanıcı bilgileri
-            // İstemci, bağlanırken sırasıyla userId, username, ve roomId bilgilerini gönderir.
+            // İstemciden kullanıcı bilgilerini al
             userId = Integer.parseInt(in.readLine());
             username = in.readLine();
             roomId = Integer.parseInt(in.readLine());
         }
 
         private void joinRoom() throws SQLException {
+            // rooms değişkenini kilitleyen yapı
             synchronized (rooms) {
-                // Eğer oda yoksa liste oluşturulur.
+                // roomId yoksa ekle, varsa değiştirme
                 rooms.putIfAbsent(roomId, new ArrayList<>());
                 rooms.get(roomId).add(this);
             }
 
-            sendRoomMessagesToClient(); // Odadaki eski mesajları istemciye gönderir.
-            notifyRoomMembers("[+] " + username + " odaya katıldı."); // Diğer kullanıcılara bildirim mesajı gönderir.
+            // Odadaki geçmiş mesajları kullanıcıya gönder
+            sendRoomMessagesToClient();
+            notifyRoomMembers("[+] " + username + " odaya katıldı.");
         }
 
-        // Kullanıcıdan gelen mesajlar işlenir.
-        // Bir dosya bulunamazsa, bir ağ bağlantısı kesilirse veya bir socket kapatılırken hata oluşursa IOException meydana gelir.
-        // BufferedReader kullanılarak istemciden veri okunurken veya PrintWriter ile istemciye veri gönderilirken giriş/çıkış işlemleri yapılır.
         private void handleClientMessages() throws IOException, SQLException {
             String message;
 
             while ((message = in.readLine()) != null) {
-                final String currentMessage = message; // Lambda için gerekli
+                final String currentMessage = message;
 
-                // threadPool.submit: Her mesaj işlemi ayrı bir iş parçacığında çalışır.
+                // Mesaj işleme işlerini kuyrukta sıraya al (lambda fonksiyonu)
+                // verilen görevi (Runnable olarak) iş parçacığı havuzuna ekler.
+                // İş parçacığı havuzu, bir işi yürütmeden önce bu işi bir kuyrukta sıraya koyar ve işleme alınacak görevleri bu kuyruktan çeker.
                 threadPool.submit(() -> {
                     try {
                         if ("LEAVE_ROOM".equals(currentMessage)) {
@@ -133,8 +136,6 @@ public class DemoServer {
                         }
                     } catch (Exception e) {
                         System.err.println("Mesaj işlenirken hata: " + e.getMessage());
-                        e.printStackTrace();
-                        // printStackTrace(), Java'da bir exception meydana geldiğinde, bu istisnanın ayrıntılı bilgiyle birlikte stack trace konsola yazdırmak için kullanılan bir yöntemdir.
                     }
                 });
             }
@@ -149,7 +150,7 @@ public class DemoServer {
                     return rs.getInt("creator_id");
                 }
             }
-            return -1; // Oda bulunamazsa -1 döner
+            return -1;
         }
 
         private void closeRoom() {
@@ -160,7 +161,7 @@ public class DemoServer {
                 if (clients != null) {
                     for (ClientHandler client : clients) {
                         client.out.println("ROOM_CLOSED");
-                        client.closeConnection(); // Kullanıcı bağlantısını kapat
+                        client.closeConnection();
                     }
                     rooms.remove(roomId);
                 }
@@ -172,27 +173,25 @@ public class DemoServer {
             String deleteRoomQuery = "DELETE FROM rooms WHERE id = ?";
 
             try (Connection conn = getConnection()) {
-                conn.setAutoCommit(false); // İşlemleri bir işlem bloğu olarak başlat
+                conn.setAutoCommit(false);
 
                 try (PreparedStatement deleteMessagesStmt = conn.prepareStatement(deleteMessagesQuery); PreparedStatement deleteRoomStmt = conn.prepareStatement(deleteRoomQuery)) {
 
-                    // `messages` tablosundaki ilgili kayıtları sil
                     deleteMessagesStmt.setInt(1, roomId);
                     deleteMessagesStmt.executeUpdate();
 
-                    // `rooms` tablosundaki oda kaydını sil
                     deleteRoomStmt.setInt(1, roomId);
                     int rowsAffected = deleteRoomStmt.executeUpdate();
 
                     if (rowsAffected > 0) {
-                        conn.commit(); // Tüm işlemleri başarılı bir şekilde tamamla
+                        conn.commit();
                         System.out.println("Oda ve ilgili mesajlar başarıyla silindi: ID = " + roomId);
                     } else {
-                        conn.rollback(); // Hata durumunda değişiklikleri geri al
+                        conn.rollback();
                         System.err.println("Oda silinirken bir hata oluştu veya oda zaten yoktu.");
                     }
                 } catch (SQLException e) {
-                    conn.rollback(); // İşlem sırasında hata oluşursa geri al
+                    conn.rollback();
                     throw e;
                 }
             } catch (SQLException e) {
@@ -201,64 +200,43 @@ public class DemoServer {
         }
 
         private void broadcastMessage(String message) {
-            roomLock.lock();
+            lock.lock();
             try {
-                for (ClientHandler client : rooms.get(roomId)) {
-                    if (client != this) {
-                        client.out.println(username + ": " + message);
+                List<ClientHandler> clients = rooms.get(roomId); // Odadaki kullanıcıları al
+                if (clients != null) {
+                    for (ClientHandler client : clients) {
+                        if (client != this) {
+                            client.out.println(username + ": " + message);
+                        }
                     }
                 }
             } finally {
-                roomLock.unlock();
+                lock.unlock();
             }
         }
 
-        /*
-        // broadcastMessage için synchronized yapısı da kullanılabilir
-        private void broadcastMessage(String message) {
-            synchronized (rooms) {
-                for (ClientHandler client : rooms.get(roomId)) {
-                    if (client != this) {
-                        client.out.println(username + ": " + message);
-                    }
-                }
-            }
-        }
-        */
-        
         private void leaveRoom() {
             synchronized (rooms) {
                 List<ClientHandler> clients = rooms.get(roomId);
                 if (clients != null) {
                     clients.remove(this);
                     if (clients.isEmpty()) {
-                        rooms.remove(roomId); // Eğer odada kimse kalmazsa oda listesinden kaldır
+                        rooms.remove(roomId);
                     } else {
                         notifyRoomMembers("[+] " + username + " odadan ayrıldı.");
                     }
                 }
             }
-            closeConnection(); // Kullanıcının bağlantısını kapat
+            closeConnection();
         }
 
         private void notifyRoomMembers(String notification) {
             synchronized (rooms) {
                 List<ClientHandler> clients = rooms.get(roomId);
-                List<String> participants = new ArrayList<>();
-
-                // Oda üyelerinin listesini oluştur
-                for (ClientHandler client : clients) {
-                    participants.add(client.username);
-                }
-
-                // Katılımcı listesini tüm kullanıcılara gönder
-                for (ClientHandler client : clients) {
-                    if (client != this) {
-                        // Diğer bildirim mesajlarını gönder
+                if (clients != null) {
+                    for (ClientHandler client : clients) {
                         client.out.println(notification);
                     }
-                    // Katılımcı listesini gönder
-                    client.out.println("UPDATE_PARTICIPANTS_LIST " + String.join(",", participants));
                 }
             }
         }
