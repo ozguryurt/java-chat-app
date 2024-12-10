@@ -1,3 +1,9 @@
+/*
+Synchronized, bir blok veya metodun aynı anda yalnızca bir iş parçacığı tarafından erişilmesini sağlamak için kullanılır.
+Eşzamanlılık sorunlarını önlemek için kullanılan bir mekanizmadır.
+Synchronized ile korunan bir blok veya metod bir lock alır ve bu lock başka bir iş parçacığı tarafından serbest bırakılana kadar diğer iş parçacıkları bu bloğa/methoda erişemez.
+*/
+
 import java.io.*; // PrintWriter , BufferedReader, InputStreamReader, IOException kullanımı için. İstemciyle metin tabanlı iletişim.
 import java.net.*; // Java network işlemleri için. ServerSocket, Socket
 import java.sql.*; // JDBC (Java Database Connectivity) API'nin bir parçası. PreparedStatement (SQL injectiona karşı)
