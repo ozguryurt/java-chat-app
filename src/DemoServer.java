@@ -1,20 +1,41 @@
+import java.io.*; // PrintWriter , BufferedReader, InputStreamReader, IOException kullanımı için. İstemciyle metin tabanlı iletişim.
+import java.net.*; // Java network işlemleri için. ServerSocket, Socket
+import java.sql.*; // JDBC (Java Database Connectivity) API'nin bir parçası. PreparedStatement (SQL injectiona karşı)
+import java.util.*; // Map, List, ArrayList, ConcurrentHashMap (aynı anda birden fazla thread tarafından kullanılabilir) veri yapıları için.
+import java.util.concurrent.*; // Multithreading sağlar. ExecutorService, ThreadPoolExecutor, BlockingQueue, LinkedBlockingQueue, TimeUnit
 
-import java.io.*;
-import java.net.*;
-import java.sql.*;
-import java.util.*;
-import java.util.concurrent.*;
+// ReentrantLock (iş parçacığı senkronizasyonu, erişim denetimi sağlar)
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
 public class DemoServer {
 
-    // // Odaların ve o odadaki istemcilerin listesi
+    // Birden fazla iş parçacığı tarafından eş zamanlı erişime izin veren bir yapı. deadlock durumunu önler.
+    // Örneğin, bir istemci mesaj gönderirken başka bir istemci aynı anda odadan çıkabilir.
+    // Map ve List kombinasyonu, odalara hızlı erişim sağlar. O(n) karmaşıklığındaki List işlemleri, yalnızca bir oda içindeki istemci sayısına bağlıdır.
+    // Haritadan oda bulma işlemi O(1) zaman alır.
+    // List: Oda ID'sine göre listeyi sıralamak veya arama yapmak gerekir (O(n)).
+    // TreeMap: Oda kimliklerinin sıralı olmasına ihtiyaç yoktur. Sıralama, gereksiz performans maliyeti ekler.
+    // HashMap: Aynı anda birden fazla iş parçacığı haritaya erişirse veri tutarsızlıkları oluşabilir.
+    // ConcurrentSkipListMap: Sıralama özelliği gereksizdir ve performans kaybına yol açar.
+    // Set ve Queue: İstemcilerin bir sırasını veya benzersizliğini sağlamada kullanılabilir ama oda ve istemcilerin ilişkisi için uygun değildir.
+    // ConcurrentHashMap kendiliğinden thread-safe olduğu için ayrıca kilit mekanizmasına gerek kalmayabilir.
     private static final Map<Integer, List<ClientHandler>> rooms = new ConcurrentHashMap<>();
 
-    // Sabit boyutlu iş parçacığı havuzu ve queue yapısı
+    // Havuzda aynı anda çalışabilecek maksimum iş parçacığı sayısını belirtir.
     private static final int THREAD_POOL_SIZE = 10;
+    // Kuyruk, iş parçacığı havuzu tarafından işlenmesi gereken görevleri düzenli bir şekilde sıraya koyar.
+    // Sonsuz Kuyruk: Kuyruğun boyutu sınırlı olmadığı için görevler dolmaz ve kaybolmaz. Bu, görevlerin güvenle işlenmesini sağlar.
+    // ArrayBlockingQueue: Sabit boyutlu olduğu için uygun değil.
+    // PriorityBlockingQueue: Öncelik gerektiren bir işleme ihtiyacımız yok.
     private static final BlockingQueue<Runnable> messageQueue = new LinkedBlockingQueue<>();
+    // Core ve Maximum iş parçacığı sayısı 10.
+    // Core iş parçacıkları hiçbir zaman sonlandırılmaz. (0L)
+    // Keep-Alive süresinin birimi milisaniye olarak ayarlanır.
+    // messageQueue görevlerin ekleneceği kuyruk yapısı.
+    // Yeni Bir İş Parçacığı Her Görev İçin Oluşturulsaydı: Yoğun yük altında sistem kaynaklarının tükenmesine yol açar.
+    // newFixedThreadPool(int n) olsaydı: kuyruk türü ve boyutu ayarlanamazdı
+    // ForkJoinPool olsaydı: divide-and-conquer) görevler için uygundur.
     private static final ExecutorService threadPool = new ThreadPoolExecutor(
             THREAD_POOL_SIZE,
             THREAD_POOL_SIZE,
@@ -22,12 +43,6 @@ public class DemoServer {
             TimeUnit.MILLISECONDS,
             messageQueue
     );
-    /*
-    Eğer bir kuyruk kullanılmasaydı:
-    İş parçacığı havuzunun boyutu dolduğunda, yeni görevler kabul edilemezdi.
-    Sunucu gelen görevleri doğrudan reddedebilir veya hata fırlatabilirdi.
-    Bu, kullanıcıların mesaj göndermesi sırasında başarısızlığa neden olabilirdi.
-     */
 
     // Lock yapısı
     private static final Lock lock = new ReentrantLock();
@@ -36,7 +51,6 @@ public class DemoServer {
     public static void loadRoomsFromDatabase() {
         String query = "SELECT id FROM rooms";
         try (Connection connection = DriverManager.getConnection("jdbc:mysql://localhost:3306/chatapp_db", "root", ""); Statement statement = connection.createStatement(); ResultSet resultSet = statement.executeQuery(query)) {
-
             while (resultSet.next()) {
                 int roomId = resultSet.getInt("id");
                 rooms.put(roomId, new ArrayList<>());
@@ -60,6 +74,9 @@ public class DemoServer {
                 // Her gelen client için yeni bir socket oluştur
                 Socket clientSocket = serverSocket.accept();
                 // Her gelen client için bir thread oluştur
+                // Bu iş parçacığı, istemciden gelen mesajı okur ve hangi işlemin yapılması gerektiğini belirler.
+                // Ancak bu iş parçacıkları doğrudan ağır işlemleri (örneğin mesajların veritabanına kaydedilmesi, tüm kullanıcılara iletilmesi) yapmaz.
+                // İstemci bağlantısını yöneten ClientHandler iş parçacıkları, ağır iş yüklerini doğrudan yapmaz. Bunun yerine, bu işleri ThreadPoolExecutor'a devreder.
                 new Thread(new ClientHandler(clientSocket)).start();
             }
         } catch (IOException e) {
@@ -126,6 +143,11 @@ public class DemoServer {
                 // Mesaj işleme işlerini kuyrukta sıraya al (lambda fonksiyonu)
                 // verilen görevi (Runnable olarak) iş parçacığı havuzuna ekler.
                 // İş parçacığı havuzu, bir işi yürütmeden önce bu işi bir kuyrukta sıraya koyar ve işleme alınacak görevleri bu kuyruktan çeker.
+                // Her bir mesaj için bir Runnable nesnesi oluşturur ve bu Runnable nesnesini iş parçacığı havuzuna ekler. Bu işlem, mesajın işlenmesini kuyrukta sıraya koyar.
+                
+                // Neden İşlemleri Kuyrukta Sıraya Alıyoruz?
+                // İş parçacığı havuzunun sınırlı boyutunu yönetir ve iş parçacıklarının aşırı yüklenmesini önler.
+                // Aynı anda birden fazla işlemi yürütmek için doğru sıralamayı korur
                 threadPool.submit(() -> {
                     try {
                         if ("LEAVE_ROOM".equals(currentMessage)) {
@@ -201,6 +223,14 @@ public class DemoServer {
             }
         }
 
+        // ReentrantLock niye kullanıldı?
+        // Object-level locks, yalnızca belirli bir nesne üzerinde kilitlenebilir ve bu kilit, sadece o nesnenin üyeleri üzerinde etkilidir. rooms haritası üzerinde eş zamanlı erişim gerekli.
+        // Bir sınıfın tüm instance'ları üzerinde kilitler. Bir sınıf içindeki tüm nesneler aynı anda kilitli olacağından, bu tür kilitler genellikle verimsizdir.
+        // ReadWriteLock uygun değildir çünkü burada yazma operasyonları dışında başka bir işlem yapılmaz.
+        // StampedLock kullanmak, ReentrantLock'a göre daha karmaşık ve spesifik bir çözüm gerektirir. Ayrıca, bir mesaj yayınlama işlemi için basit bir kilit yeterlidir.
+        // Burada rooms ve clientHandler yönetiminde bir kaynak sınırlaması yoktur. Semaphore daha ziyade bir sınırlı kaynak havuzunu izlemek için kullanılırken daha doğrudur.
+        // Countdown Latch: Belirli bir olayın gerçekleşmesi için bir dizi iş parçacığının tamamlanmasını bekler. İş parçacıkları bu latch'i beklerken işlem yapamaz.
+        // Mutex: Özel bir kilitleme ve eş zamanlı erişim kontrolü sağlar. Mutex, genellikle sistem seviyesinde daha alt düzey işlemler için kullanılır.
         private void broadcastMessage(String message) {
             lock.lock();
             try {
