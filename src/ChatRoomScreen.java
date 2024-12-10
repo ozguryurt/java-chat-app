@@ -95,11 +95,11 @@ public class ChatRoomScreen {
                 int confirm = JOptionPane.showConfirmDialog(frame, "Odayı kapatmak istediğinizden emin misiniz?", "Odayı Kapat", JOptionPane.YES_NO_OPTION);
                 if (confirm == JOptionPane.YES_OPTION) {
                     out.println("CLOSE_ROOM");
-                    try {
+                    /*try {
                         socket.close();
                     } catch (IOException ex) {
                         ex.printStackTrace();
-                    }
+                    }*/
                 }
             });
 
