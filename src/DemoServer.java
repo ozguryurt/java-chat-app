@@ -1,3 +1,4 @@
+
 import java.io.*;
 import java.net.*;
 import java.sql.*;
@@ -113,6 +114,7 @@ public class DemoServer {
             // Odadaki geçmiş mesajları kullanıcıya gönder
             sendRoomMessagesToClient();
             notifyRoomMembers("[+] " + username + " odaya katıldı.");
+            updateParticipantsList();
         }
 
         private void handleClientMessages() throws IOException, SQLException {
@@ -224,6 +226,7 @@ public class DemoServer {
                         rooms.remove(roomId);
                     } else {
                         notifyRoomMembers("[+] " + username + " odadan ayrıldı.");
+                        updateParticipantsList();
                     }
                 }
             }
@@ -236,6 +239,28 @@ public class DemoServer {
                 if (clients != null) {
                     for (ClientHandler client : clients) {
                         client.out.println(notification);
+                    }
+                }
+            }
+        }
+
+        private void updateParticipantsList() {
+            synchronized (rooms) {
+                List<ClientHandler> clients = rooms.get(roomId);
+                if (clients != null) {
+                    StringBuilder participants = new StringBuilder();
+                    for (ClientHandler client : clients) {
+                        participants.append(client.username).append(",");
+                    }
+
+                    // Son virgülü kaldır
+                    if (participants.length() > 0) {
+                        participants.setLength(participants.length() - 1);
+                    }
+
+                    // Katılımcı listesini tüm odadaki kullanıcılara gönder
+                    for (ClientHandler client : clients) {
+                        client.out.println("UPDATE_PARTICIPANTS_LIST " + participants);
                     }
                 }
             }
