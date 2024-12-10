@@ -17,6 +17,9 @@ public class DemoClient1 {
 }
 
 /*
+Event Dispatch Thread (EDT), Java'daki Swing uygulamaları için kullanıcı arayüzü olaylarını işleyen ana iş parçacığıdır.
+invokeLater, verilen işlemi EDT'ye ekler ve böylece GUI ile ilgili işlemlerin güvenli bir şekilde bu iş parçacığı üzerinde çalışmasını sağlar.
+Bu yaklaşım, çoklu iş parçacığı ortamında GUI'nin kararlı ve tutarlı bir şekilde çalışmasını temin eder.
 
 invokeLater, Swing GUI bileşenlerinin oluşturulması ve manipülasyonu yalnızca EDT üzerinde güvenli bir şekilde yapılabilir.
 invokeLater, GUI işlemlerinin diğer arka plan görevlerinden ayrılmasını sağlar. Böylece ana iş parçacığı bloke olmaz ve program daha yanıt verir olur.
