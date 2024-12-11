@@ -67,9 +67,9 @@ public class MainScreen {
                 }
 
                 // SwingWorker ile arka plan işlemi
-                SwingWorker<Void, Void> registerWorker = new SwingWorker<>() {
+                SwingWorker<Boolean, Void> registerWorker = new SwingWorker<>() {
                     @Override
-                    protected Void doInBackground() throws Exception {
+                    protected Boolean doInBackground() {
                         try (Connection connection = DriverManager.getConnection("jdbc:mysql://localhost:3306/chatapp_db", "root", "")) {
                             String sql = "INSERT INTO users (username, password, created_at) VALUES (?, ?, ?)";
                             PreparedStatement statement = connection.prepareStatement(sql);
@@ -79,22 +79,34 @@ public class MainScreen {
                             statement.setTimestamp(3, Timestamp.valueOf(LocalDateTime.now()));
 
                             int rowsInserted = statement.executeUpdate();
-                            if (rowsInserted > 0) {
+                            return rowsInserted > 0;
+                        } catch (SQLException ex) {
+                            ex.printStackTrace();
+                            SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(frame, "Veritabanı hatası: " + ex.getMessage(), "Hata", JOptionPane.ERROR_MESSAGE));
+                            return false;
+                        }
+                    }
+
+                    @Override
+                    protected void done() {
+                        try {
+                            boolean success = get(); // doInBackground() metodunun dönüş değerini al
+
+                            if (success) {
                                 JOptionPane.showMessageDialog(frame, "Kayıt başarılı!", "Bilgi", JOptionPane.INFORMATION_MESSAGE);
                             } else {
                                 JOptionPane.showMessageDialog(frame, "Kayıt başarısız.", "Hata", JOptionPane.ERROR_MESSAGE);
                             }
-                        } catch (SQLException ex) {
+                        } catch (Exception ex) {
                             ex.printStackTrace();
-                            JOptionPane.showMessageDialog(frame, "Veritabanı hatası: " + ex.getMessage(), "Hata", JOptionPane.ERROR_MESSAGE);
+                            JOptionPane.showMessageDialog(frame, "Bir hata oluştu: " + ex.getMessage(), "Hata", JOptionPane.ERROR_MESSAGE);
                         }
-                        return null;
                     }
                 };
                 registerWorker.execute(); // İş parçacığını başlat
             }
         });
-
+        
         // Sağ: Giriş bölümü
         JPanel rightPanel = new JPanel(new GridBagLayout());
         rightPanel.setBorder(BorderFactory.createTitledBorder("Giriş Yap"));
@@ -136,9 +148,11 @@ public class MainScreen {
                 }
 
                 // SwingWorker tanımlama
-                SwingWorker<Void, Void> loginWorker = new SwingWorker<>() {
+                SwingWorker<Boolean, Void> loginWorker = new SwingWorker<>() {
+                    private int userId;
+
                     @Override
-                    protected Void doInBackground() {
+                    protected Boolean doInBackground() {
                         try (Connection connection = DriverManager.getConnection("jdbc:mysql://localhost:3306/chatapp_db", "root", "")) {
                             String sql = "SELECT * FROM users WHERE username = ? AND password = ?";
                             PreparedStatement statement = connection.prepareStatement(sql);
@@ -148,24 +162,37 @@ public class MainScreen {
                             ResultSet resultSet = statement.executeQuery();
 
                             if (resultSet.next()) {
-                                int userId = resultSet.getInt("id"); // Veritabanından kullanıcı ID'sini al
-
-                                SwingUtilities.invokeLater(() -> {
-                                    // Başarılı giriş
-                                    UserSession.getInstance().setUsername(username); // Kullanıcıyı kaydet
-                                    UserSession.getInstance().setUserId(userId);     // Kullanıcı ID'sini kaydet
-                                    new UserScreen();  // Kullanıcı ekranını aç
-                                    frame.dispose();   // Ana ekranı kapat
-                                });
+                                userId = resultSet.getInt("id"); // Veritabanından kullanıcı ID'sini al
+                                return true;
                             } else {
-                                // Kullanıcı yok
-                                SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(frame, "Kullanıcı adı veya şifre yanlış.", "Hata", JOptionPane.ERROR_MESSAGE));
+                                return false;
                             }
                         } catch (SQLException ex) {
                             ex.printStackTrace();
                             SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(frame, "Veritabanı hatası: " + ex.getMessage(), "Hata", JOptionPane.ERROR_MESSAGE));
+                            return false;
                         }
-                        return null;
+                    }
+
+                    @Override
+                    protected void done() {
+                        try {
+                            boolean success = get(); // doInBackground() metodunun dönüş değerini al
+
+                            if (success) {
+                                // Başarılı giriş
+                                UserSession.getInstance().setUsername(username); // Kullanıcıyı kaydet
+                                UserSession.getInstance().setUserId(userId);     // Kullanıcı ID'sini kaydet
+                                new UserScreen();  // Kullanıcı ekranını aç
+                                frame.dispose();   // Ana ekranı kapat
+                            } else {
+                                // Kullanıcı yok
+                                JOptionPane.showMessageDialog(frame, "Kullanıcı adı veya şifre yanlış.", "Hata", JOptionPane.ERROR_MESSAGE);
+                            }
+                        } catch (Exception ex) {
+                            ex.printStackTrace();
+                            JOptionPane.showMessageDialog(frame, "Bir hata oluştu: " + ex.getMessage(), "Hata", JOptionPane.ERROR_MESSAGE);
+                        }
                     }
                 };
 
